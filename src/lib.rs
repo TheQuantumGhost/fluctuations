@@ -1,5 +1,6 @@
 #![warn(clippy::all, rust_2018_idioms)]
 
+mod intervalle_confiance;
+
 mod app;
-pub use app::Fluctuations as App;
-pub use app::TemplateApp; // as App;
+pub use app::ProbaApp as App;
