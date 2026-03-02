@@ -12,8 +12,6 @@ pub struct Fluctuations {
     #[serde(skip)]
     show_exp: bool,
     #[serde(skip)]
-    show_interval_sqrt: bool,
-    #[serde(skip)]
     show_interval_90: bool,
     #[serde(skip)]
     show_interval_95: bool,
@@ -31,7 +29,6 @@ impl Default for Fluctuations {
             sample_number: 100,
             f: 0.5,
             show_exp: false,
-            show_interval_sqrt: false,
             show_interval_90: false,
             show_interval_95: false,
             show_interval_99: false,
@@ -92,7 +89,6 @@ impl Fluctuations {
             }
         });
         ui.add(Checkbox::new(&mut self.show_exp, "Experience"));
-        ui.add(Checkbox::new(&mut self.show_interval_sqrt, "Intervalle"));
         ui.add(Checkbox::new(
             &mut self.show_interval_90,
             "Intervalle à 90%",
@@ -129,8 +125,6 @@ impl Fluctuations {
         let p_line =
             Line::new("Probabilité", vec![[-1f64, self.p], [2f64, self.p]]).color(Color32::BLUE);
 
-        let line_sqrt = interval_line("Confiance", self.p, 1. / (self.sample_size as f64).sqrt());
-
         let sigma = (self.p * (1. - self.p) / self.sample_size as f64).sqrt();
         let line_90 =
             interval_line("90%", self.p, 1.645 * sigma).color(Color32::from_rgb(51, 153, 102));
@@ -149,9 +143,6 @@ impl Fluctuations {
             .allow_boxed_zoom(false)
             .show(ui, |plot_ui| {
                 plot_ui.line(p_line);
-                if self.show_interval_sqrt {
-                    plot_ui.line(line_sqrt);
-                }
                 if self.show_interval_90 {
                     plot_ui.line(line_90);
                 }
