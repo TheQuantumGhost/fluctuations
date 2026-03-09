@@ -3,5 +3,5 @@
 mod intervalle_confiance;
 
 mod app;
-mod parsing;
+// mod parsing;
 pub use app::ProbaApp as App;
