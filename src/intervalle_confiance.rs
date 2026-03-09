@@ -1,6 +1,14 @@
 use egui::{Checkbox, Color32, DragValue, Label, Slider, Ui};
-use egui_plot::{Line, Plot, PlotPoints, Points};
+use egui_plot::{Bar, BarChart, Line, Plot, PlotPoints, Points};
 use rand::{distr::Bernoulli, rngs::ThreadRng};
+
+const Q90: f64 = 1.645;
+const Q95: f64 = 1.96;
+const Q99: f64 = 2.578;
+
+const COLOR_BLUE: Color32 = Color32::from_rgb(102, 102, 204);
+const COLOR_GREEN: Color32 = Color32::from_rgb(102, 204, 102);
+const COLOR_RED: Color32 = Color32::from_rgb(204, 102, 102);
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -9,16 +17,20 @@ pub struct Fluctuations {
     sample_size: usize,
     sample_number: usize,
     f: f64,
+    display_style: DisplayMode,
     #[serde(skip)]
     show_exp: bool,
     #[serde(skip)]
-    show_interval_90: bool,
-    #[serde(skip)]
-    show_interval_95: bool,
-    #[serde(skip)]
-    show_interval_99: bool,
+    interval_q: Option<f64>,
     #[serde(skip)]
     points: Vec<f64>,
+}
+
+#[derive(Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+enum DisplayMode {
+    #[default]
+    Points,
+    Intervalles,
 }
 
 impl Default for Fluctuations {
@@ -28,10 +40,9 @@ impl Default for Fluctuations {
             sample_size: 100,
             sample_number: 100,
             f: 0.5,
+            display_style: DisplayMode::default(),
             show_exp: false,
-            show_interval_90: false,
-            show_interval_95: false,
-            show_interval_99: false,
+            interval_q: None,
             points: Vec::default(),
         }
     }
@@ -47,6 +58,7 @@ fn generate_sample(rng: &mut ThreadRng, p: f64, sample_size: usize) -> f64 {
         .count() as f64
         / sample_size as f64
 }
+
 impl Fluctuations {
     fn gen_points(&mut self, rng: &mut ThreadRng) {
         self.points = (0..self.sample_number)
@@ -55,13 +67,25 @@ impl Fluctuations {
     }
 
     pub fn show_ui(&mut self, rng: &mut ThreadRng, ui: &mut Ui) {
-        if ui
-            .add(Slider::new(&mut self.p, 0.0..=1.0).text("Probabilité"))
-            .changed()
-        {
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.display_style, DisplayMode::Points, "Points");
+            ui.selectable_value(
+                &mut self.display_style,
+                DisplayMode::Intervalles,
+                "Intervalles",
+            );
+        });
+
+        let probability_response = ui.add(Slider::new(&mut self.p, 0.0..=1.0).text("Probabilité"));
+        if probability_response.changed() {
             self.gen_points(rng);
         }
-        ui.add(Slider::new(&mut self.f, 0.0..=1.0).text("Experience"));
+
+        if self.display_style != DisplayMode::Intervalles {
+            ui.add(Slider::new(&mut self.f, 0.0..=1.0).text("Experience"));
+            ui.add(Checkbox::new(&mut self.show_exp, "Experience"));
+        }
+
         ui.horizontal(|ui| {
             ui.add(Label::new("Taille d'un échantillon"));
             if ui
@@ -88,22 +112,30 @@ impl Fluctuations {
                 self.gen_points(rng);
             }
         });
-        ui.add(Checkbox::new(&mut self.show_exp, "Experience"));
-        ui.add(Checkbox::new(
-            &mut self.show_interval_90,
-            "Intervalle à 90%",
-        ));
-        ui.add(Checkbox::new(
-            &mut self.show_interval_95,
-            "Intervalle à 95%",
-        ));
-        ui.add(Checkbox::new(
-            &mut self.show_interval_99,
-            "Intervalle à 99%",
-        ));
+
+        match self.display_style {
+            DisplayMode::Points => ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.interval_q, None, "Rien");
+                ui.selectable_value(&mut self.interval_q, Some(Q90), "90%");
+                ui.selectable_value(&mut self.interval_q, Some(Q95), "95%");
+                ui.selectable_value(&mut self.interval_q, Some(Q99), "99%");
+            }),
+            DisplayMode::Intervalles => ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.interval_q, Some(Q90), "90%");
+                ui.selectable_value(&mut self.interval_q, Some(Q95), "95%");
+                ui.selectable_value(&mut self.interval_q, Some(Q99), "99%");
+            }),
+        };
     }
 
     pub fn show_plot(&self, ui: &mut Ui) {
+        match self.display_style {
+            DisplayMode::Points => self.show_plot_points(ui),
+            DisplayMode::Intervalles => self.show_plot_intervalles(ui),
+        }
+    }
+
+    pub fn show_plot_points(&self, ui: &mut Ui) {
         let points: PlotPoints<'_> = self
             .points
             .iter()
@@ -112,28 +144,20 @@ impl Fluctuations {
             .collect();
         let points = Points::new("Points", points)
             .shape(egui_plot::MarkerShape::Circle)
-            .color(Color32::RED)
+            .color(COLOR_RED)
             .filled(true)
             .radius(5.);
 
         let main_point = Points::new("Experience", [0.5, self.f])
             .shape(egui_plot::MarkerShape::Circle)
-            .color(Color32::GREEN)
+            .color(COLOR_GREEN)
             .filled(true)
             .radius(6.);
 
         let p_line =
-            Line::new("Probabilité", vec![[-1f64, self.p], [2f64, self.p]]).color(Color32::BLUE);
+            Line::new("Probabilité", vec![[-1f64, self.p], [2f64, self.p]]).color(COLOR_BLUE);
 
-        let sigma = (self.p * (1. - self.p) / self.sample_size as f64).sqrt();
-        let line_90 =
-            interval_line("90%", self.p, 1.645 * sigma).color(Color32::from_rgb(51, 153, 102));
-        let line_95 =
-            interval_line("95%", self.p, 1.96 * sigma).color(Color32::from_rgb(51, 153, 51));
-        let line_99 =
-            interval_line("99%", self.p, 2.5758 * sigma).color(Color32::from_rgb(51, 153, 0));
-
-        Plot::new("plot")
+        Plot::new("plot_points")
             .default_x_bounds(-0.05, 1.05)
             .default_y_bounds(-0.05, 1.05)
             .allow_scroll(false)
@@ -143,14 +167,13 @@ impl Fluctuations {
             .allow_boxed_zoom(false)
             .show(ui, |plot_ui| {
                 plot_ui.line(p_line);
-                if self.show_interval_90 {
-                    plot_ui.line(line_90);
-                }
-                if self.show_interval_95 {
-                    plot_ui.line(line_95);
-                }
-                if self.show_interval_99 {
-                    plot_ui.line(line_99);
+                if let Some(q) = self.interval_q {
+                    let sigma = (self.p * (1. - self.p) / self.sample_size as f64).sqrt();
+                    let delta = q * sigma;
+                    plot_ui.add(
+                        double_line("Intervalle", self.p - delta, self.p + delta)
+                            .color(Color32::from_rgb(51, 153, 102)),
+                    );
                 }
 
                 plot_ui.add(points);
@@ -160,16 +183,41 @@ impl Fluctuations {
                 }
             });
     }
+    pub fn show_plot_intervalles(&self, ui: &mut Ui) {
+        let bars = self
+            .points
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let sigma = (p * (1. - p) / self.sample_size as f64).sqrt();
+                let delta = self.interval_q.unwrap_or_default() * sigma;
+
+                Bar::new(i as f64 / self.sample_number as f64, 2. * delta).base_offset(p - delta)
+            })
+            .collect();
+        let bars = BarChart::new("Intervalles", bars)
+            .width(0.1 / self.sample_number as f64)
+            .color(COLOR_RED);
+
+        let p_line =
+            Line::new("Probabilité", vec![[-1f64, self.p], [2f64, self.p]]).color(COLOR_BLUE);
+
+        Plot::new("plot_intervalles")
+            .default_x_bounds(-0.05, 1.05)
+            .default_y_bounds(-0.05, 1.05)
+            .allow_scroll(false)
+            .allow_axis_zoom_drag(false)
+            .allow_zoom(false)
+            .allow_drag(false)
+            .allow_boxed_zoom(false)
+            .show(ui, |plot_ui| {
+                plot_ui.add(bars);
+
+                plot_ui.add(p_line);
+            });
+    }
 }
 
-fn interval_line(name: &str, p: f64, delta: f64) -> Line<'_> {
-    Line::new(
-        name,
-        vec![
-            [-1f64, p + delta],
-            [2f64, p + delta],
-            [2f64, p - delta],
-            [-1f64, p - delta],
-        ],
-    )
+fn double_line(name: &str, low: f64, high: f64) -> Line<'_> {
+    Line::new(name, vec![[-1., low], [2., low], [2., high], [-1., high]])
 }

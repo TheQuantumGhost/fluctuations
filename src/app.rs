@@ -7,13 +7,22 @@ use crate::intervalle_confiance::Fluctuations;
 pub struct ProbaApp {
     #[serde(skip)]
     rng: ThreadRng,
+    selected_demo: Demo,
     fluctuations: Fluctuations,
+}
+
+#[derive(Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+enum Demo {
+    #[default]
+    Fluctuations,
+    Intervalles,
 }
 
 impl Default for ProbaApp {
     fn default() -> Self {
         Self {
             rng: rand::rng(),
+            selected_demo: Demo::default(),
             fluctuations: Fluctuations::default(),
         }
     }
@@ -53,6 +62,23 @@ impl eframe::App for ProbaApp {
 
             self.fluctuations.show_ui(&mut self.rng, ui);
         });
+
+        //egui::SidePanel::left("selection panel")
+        //    .resizable(true)
+        //    .show(ctx, |ui| {
+        //        ui.vertical(|ui| {
+        //            ui.selectable_value(
+        //                &mut self.selected_demo,
+        //                Demo::Fluctuations,
+        //                "Fréquences empiriques",
+        //            );
+        //            ui.selectable_value(
+        //                &mut self.selected_demo,
+        //                Demo::Intervalles,
+        //                "Intervalles empiriques",
+        //            );
+        //        });
+        //    });
 
         egui::CentralPanel::default().show(ctx, |ui| self.fluctuations.show_plot(ui));
     }

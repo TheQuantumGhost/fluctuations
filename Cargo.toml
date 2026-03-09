@@ -28,6 +28,7 @@ egui_plot = "0.34.1"
 rand = { version = "0.10.0", default-features = false, features = [
   "thread_rng"
 ] }
+nom = "8.0.0"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
